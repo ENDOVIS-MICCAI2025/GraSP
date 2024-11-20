@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.preprocessing import label_binarize
-from sklearn.metrics import precision_recall_curve, average_precision_score
+from sklearn.metrics import precision_recall_curve, average_precision_score, f1_score, precision_score, recall_score
 from tqdm import tqdm
 
 def eval_classification(task, coco_anns, preds, img_ann_dict, mask_path):
@@ -44,3 +44,53 @@ def eval_classification(task, coco_anns, preds, img_ann_dict, mask_path):
     cat_names = [f"{cat['name']}-AP" for cat in classes]
     
     return mAP, dict(zip(cat_names,list(ap.values())))
+
+def eval_precision(task, coco_anns, preds, img_ann_dict, mask_path):
+
+    classes = coco_anns[f'{task}_categories']
+    num_classes = len(classes)
+
+    num_labels = np.zeros((len(coco_anns["annotations"])))
+    num_preds = np.zeros((len(coco_anns["annotations"])))
+    num_probs = np.zeros((len(coco_anns["annotations"]), num_classes))
+
+
+    evaluated_frames = []
+    bar = tqdm(total=len(coco_anns["annotations"]))
+    for idx, ann in enumerate(coco_anns["annotations"]):
+        ann_class = int(ann[task])
+
+        num_labels[idx] = ann_class
+
+        if  ann["image_name"] in preds.keys():
+            these_probs = preds[ann["image_name"]]['{}_score_dist'.format(task)]
+            if len(these_probs) == 0:
+                print("Prediction not found for image {}".format(ann["image_name"]))
+                these_probs = np.zeros((1, num_classes))
+            else:
+                evaluated_frames.append(idx)
+            num_preds[idx] = np.argmax(these_probs)
+            num_probs[idx] = these_probs
+        else:
+            print("Image {} not found in predictions lists".format(ann["image_name"]))
+            breakpoint()
+        bar.update(1)
+
+
+    f1 = f1_score(num_labels, num_preds, average='macro')
+    
+    precision =  precision_score(num_labels, num_preds, average=None)
+    mprecision = np.nanmean(precision)
+
+    recall = recall_score(num_labels, num_preds, average=None)
+    mrecall = np.nanmean(recall)
+
+    msummary = {i: precision[i] for i in range(len(precision))}
+    msummary[len(msummary) + 1] = mprecision
+    msummary[len(msummary) + 2] = mrecall
+    
+    cat_names = [f"{cat['name']}" for cat in classes]
+    cat_names.append("mP")
+    cat_names.append("mR")
+    
+    return f1, dict(zip(cat_names,list(msummary.values())))

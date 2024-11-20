@@ -7,7 +7,7 @@ import sklearn
 import argparse
 import pandas as pd
 
-from .classification_eval import eval_classification
+from .classification_eval import eval_classification, eval_precision
 from .detection_eval import eval_detection
 from .semantic_segmentation_eval import eval_segmentation as eval_sem_segmentation
 from .instance_segmentation_eval import eval_segmentation as eval_inst_segmentation
@@ -35,7 +35,8 @@ METRIC_DICT = {'mAP': eval_classification,
                'detection': eval_detection,
                'inst_segmentation': eval_inst_segmentation,
                'sem_segmentation': eval_sem_segmentation,
-               'segmentation': eval_segmentation}
+               'segmentation': eval_segmentation,
+               'f-score': eval_precision}
 
 def get_img_ann_dict(coco_anns,task):
     img_ann_dict = {}
