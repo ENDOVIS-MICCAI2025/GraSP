@@ -24,7 +24,11 @@ logger = logging.get_logger(__name__)
 IDENT_FUNCT_DICT = {'psi_ava': lambda x,y: 'CASE{:03d}/{:05d}.jpg'.format(x,y),
                     'grasp': lambda x,y: 'CASE{:03d}/{:09d}.jpg'.format(x,y),
                     'endovis_2018': lambda x,y: 'seq_{}_frame{:03d}.jpg'.format(x,y),
-                    'endovis_2017': lambda x,y: 'seq{}_frame{:03d}.jpg'.format(x,y),}
+                    'endovis_2017': lambda x,y: 'seq{}_frame{:03d}.jpg'.format(x,y),
+                    'levis': lambda x,y: 'video_{:03d}/{:05d}.jpg'.format(x,y),
+                    'levis_png': lambda x,y: 'video_{:03d}/{:05d}.png'.format(x,y)}
+
+heichole_videos = [f'video_{str(i).zfill(3)}' for i in range(102, 126)]
 
 class SurgeryMeter(object):
     """
@@ -189,7 +193,17 @@ class SurgeryMeter(object):
                 self.all_preds[task].extend(preds[task])
             
             if self.parallel:
-                names = [IDENT_FUNCT_DICT[self.dataset_name](*name) for name in names]
+                names_reconstructed = []
+                for name in names:
+                    video_num, frame_num = name
+
+                    if video_num in heichole_videos:
+                        names_reconstructed.append('video_{:03d}/{:05d}.png'.format(video_num,frame_num))
+                    else:
+                        names_reconstructed.append('video_{:03d}/{:05d}.jpg'.format(video_num,frame_num))
+                        
+                names = [name for name in names_reconstructed]
+
             self.all_names.extend(names)
             if self.regions:
                 self.all_boxes.extend(boxes)
@@ -204,6 +218,71 @@ class SurgeryMeter(object):
         if lr is not None:
             self.lr = lr
 
+    def calculate_metrics(self, preds, gts, metrics):
+        """Calculate metrics based on predictions and ground truths."""
+        results = {}
+        for metric in metrics:
+            if metric == "accuracy":
+                results[metric] = np.mean([pred == gt for pred, gt in zip(preds, gts)])
+            elif metric == "precision":
+                results[metric] = np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(preds)
+            elif metric == "recall":
+                results[metric] = np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(gts)
+            elif metric == "jaccard":
+                intersection = np.sum([p == g == 1 for p, g in zip(preds, gts)])
+                union = np.sum(preds) + np.sum(gts) - intersection
+                results[metric] = intersection / union
+            elif metric == "f1_score":
+                precision = results.get("precision", np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(preds))
+                recall = results.get("recall", np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(gts))
+                results[metric] = 2 * (precision * recall) / (precision + recall)
+        return results
+    
+    def evaluation_per_dataset(self, preds, names):
+        """Evaluate metrics per dataset."""
+        dataset_metrics = {
+            "AutoLaparo": ["video_{}".format(i) for i in range(15, 22)],
+            "Cholec80": ["video_{}".format(i) for i in range(62, 102)],
+            "HeiChole": ["video_{}".format(i) for i in range(118, 126)],
+            "HeiCo": ["video_{}".format(i) for i in [133, 134, 135, 143, 144, 145, 153, 154, 155]],
+            "M2CAI": ["video_{}".format(i) for i in range(183, 197)],
+        }
+
+        results = {}
+
+        for dataset, videos in dataset_metrics.items():
+            dataset_preds = [pred for pred, name in zip(preds, names) if any(video in name for video in videos)]
+            dataset_gts = [self.groundtruth[name] for name in names if any(video in name for video in videos)]
+            
+            if not dataset_preds or not dataset_gts:
+                logging.warning(f"No predictions or ground truths for {dataset}. Skipping evaluation.")
+                continue
+
+            if dataset == "AutoLaparo":
+                results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["accuracy", "precision", "recall", "jaccard"])
+            
+            elif dataset == "Cholec80":
+                video_results = []
+                for video in videos:
+                    video_preds = [pred for pred, name in zip(preds, names) if video in name]
+                    video_gts = [self.groundtruth[name] for name in names if video in name]
+                    if video_preds and video_gts:
+                        video_results.append(self.calculate_metrics(video_preds, video_gts, ["accuracy", "precision", "recall"]))
+                metrics_mean = {metric: np.mean([res[metric] for res in video_results]) for metric in ["accuracy", "precision", "recall"]}
+                metrics_std = {metric: np.std([res[metric] for res in video_results]) for metric in ["accuracy", "precision", "recall"]}
+                results[dataset] = {"mean": metrics_mean, "std": metrics_std}
+            
+            elif dataset == "HeiChole":
+                results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["f1_score"])
+            
+            elif dataset == "HeiCo":
+                results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["accuracy", "precision", "recall", "jaccard", "f1_score"])
+            
+            elif dataset == "M2CAI":
+                results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["precision", "recall", "jaccard"])
+
+        return results
+    
     def finalize_metrics(self, epoch, log=True):
         """
         Calculate and log the final PSI-AVA metrics.
@@ -211,6 +290,7 @@ class SurgeryMeter(object):
         out_name = {}
         for task,metric in zip(self.tasks, self.metrics):
             out_name[task] = self.save_json(task, self.all_preds, self.all_boxes,  self.all_names, epoch)
+            # TODO: General functions for all metrics
             self.full_map[task] = grasp_eval.main_per_task(self.groundtruth, out_name[task], task, metric)
             if log:
                 stats = {"mode": self.mode, "task":task, "metric": self.full_map[task]}
@@ -218,6 +298,12 @@ class SurgeryMeter(object):
         if log:
             stats = {"mode": self.mode, "mean metric": np.mean([v[m] for v,m in zip(list(self.full_map.values()), self.metrics)])}
             logging.log_json_stats(stats)
+
+        dataset_results = self.evaluation_per_dataset(self.all_preds, self.all_names)
+
+        for dataset, metrics in dataset_results.items():
+            if log:
+                logging.info(f"Metrics for {dataset}: {metrics}")
         
         return self.full_map, np.mean([v[m] for v,m in zip(list(self.full_map.values()), self.metrics)]), out_name
                     

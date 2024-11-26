@@ -592,6 +592,8 @@ _C.DATA.JUST_CENTER = False
 # Verify consistency in data loading
 _C.DATA.VERIFICATIONS = True
 
+# Load online clips (only past and present)
+_C.DATA.ONLINE = False
 
 # ---------------------------------------------------------------------------- #
 # Optimizer options

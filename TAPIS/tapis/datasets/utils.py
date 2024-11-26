@@ -51,7 +51,7 @@ def retry_load_images(image_paths, retry=10, backend="pytorch"):
             raise Exception("Failed to load images {}".format(image_paths))
 
 
-def get_sequence(center_idx, half_len, sample_rate, num_frames):
+def get_sequence(center_idx, half_len, sample_rate, num_frames, length, online=False):
     """
     Sample frames among the corresponding clip.
 
@@ -64,7 +64,16 @@ def get_sequence(center_idx, half_len, sample_rate, num_frames):
     Returns:
         seq (list): list of indexes of sampled frames in this clip.
     """
-    seq = list(range(center_idx - half_len, center_idx + half_len, sample_rate))
+    if not online:
+        if length % 2 == 0:
+            seq = list(range(center_idx - half_len, center_idx + half_len, sample_rate))
+        else:
+            seq = list(range(center_idx - half_len, center_idx + half_len + 1, sample_rate))
+    
+    else:
+        seq = list(range(center_idx, center_idx - half_len * 2, -sample_rate))
+        seq.sort()
+ 
 
     for seq_idx in range(len(seq)):
         if seq[seq_idx] < 0:

@@ -88,6 +88,7 @@ def construct_loader(cfg, split, is_precise_bn=False):
 
     # Construct the dataset
     dataset = build_dataset(dataset_name, cfg, split)
+    # TODO: Index for debugging
 
     if isinstance(dataset, torch.utils.data.IterableDataset):
         loader = torch.utils.data.DataLoader(
