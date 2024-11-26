@@ -8,6 +8,7 @@ from tapis.utils.parser import load_config, parse_args
 
 from train_net import train
 
+import wandb
 
 def main():
     """

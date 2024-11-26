@@ -23,7 +23,12 @@ from tapis.utils.meters import EpochTimer, SurgeryMeter
 import torch.backends.cudnn as cudnn
 import torch.backends.cudnn
 
+import wandb
+
 logger = logging.get_logger(__name__)
+
+# Initialize wandb.
+wandb.init(project='Phases_Foundational', entity='endovis_bcv', name='Baseline_MViT')
 
 def train_epoch(
     train_loader,
@@ -101,13 +106,14 @@ def train_epoch(
             for task in loss_dict:
                 loss_fun = loss_dict[task]
                 target_type = type_dict[task]
-                loss.append(loss_fun(preds[task], labels[task].to(target_type))) 
+                loss.append(loss_fun(preds[task], labels[task].to(target_type)))
 
         if len(loss_dict) >1:
             final_loss = losses.compute_weighted_loss(loss, loss_weights)
         else:
             final_loss = loss[0]
-            
+        
+        wandb.log({'Train Loss': final_loss.item()})
         # check Nan Loss.
         misc.check_nan_losses(final_loss)
 
