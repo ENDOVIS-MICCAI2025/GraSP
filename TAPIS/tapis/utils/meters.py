@@ -19,6 +19,9 @@ import tapis.evaluate.main_eval as grasp_eval
 import tapis.utils.logging as logging
 import tapis.utils.misc as misc
 
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, jaccard_score
+import wandb
+
 logger = logging.get_logger(__name__)
 
 IDENT_FUNCT_DICT = {'psi_ava': lambda x,y: 'CASE{:03d}/{:05d}.jpg'.format(x,y),
@@ -219,41 +222,68 @@ class SurgeryMeter(object):
             self.lr = lr
 
     def calculate_metrics(self, preds, gts, metrics):
-        """Calculate metrics based on predictions and ground truths."""
+        """Calculate metrics based on predictions and ground truths using sklearn."""
         results = {}
         for metric in metrics:
             if metric == "accuracy":
-                results[metric] = np.mean([pred == gt for pred, gt in zip(preds, gts)])
+                results[metric] = accuracy_score(gts, preds)
             elif metric == "precision":
-                results[metric] = np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(preds)
+                results[metric] = precision_score(gts, preds, average='macro')
             elif metric == "recall":
-                results[metric] = np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(gts)
+                results[metric] = recall_score(gts, preds, average='macro')
             elif metric == "jaccard":
-                intersection = np.sum([p == g == 1 for p, g in zip(preds, gts)])
-                union = np.sum(preds) + np.sum(gts) - intersection
-                results[metric] = intersection / union
+                results[metric] = jaccard_score(gts, preds, average='macro')
             elif metric == "f1_score":
-                precision = results.get("precision", np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(preds))
-                recall = results.get("recall", np.sum([p == g == 1 for p, g in zip(preds, gts)]) / np.sum(gts))
-                results[metric] = 2 * (precision * recall) / (precision + recall)
+                results[metric] = f1_score(gts, preds, average='macro')
         return results
     
     def evaluation_per_dataset(self, preds, names):
         """Evaluate metrics per dataset."""
         dataset_metrics = {
-            "AutoLaparo": ["video_{}".format(i) for i in range(15, 22)],
-            "Cholec80": ["video_{}".format(i) for i in range(62, 102)],
-            "HeiChole": ["video_{}".format(i) for i in range(118, 126)],
-            "HeiCo": ["video_{}".format(i) for i in [133, 134, 135, 143, 144, 145, 153, 154, 155]],
-            "M2CAI": ["video_{}".format(i) for i in range(183, 197)],
+            "AutoLaparo": [f"video_{str(i).zfill(3)}" for i in range(15, 22)],
+            "Cholec80": [f"video_{str(i).zfill(3)}" for i in range(62, 102)],
+            "HeiChole": [f"video_{str(i).zfill(3)}" for i in range(118, 126)],
+            "HeiCo": [f"video_{str(i).zfill(3)}" for i in [133, 134, 135, 143, 144, 145, 153, 154, 155]],
+            "M2CAI": [f"video_{str(i).zfill(3)}" for i in range(183, 197)],
         }
 
         results = {}
 
+        values_preds = preds['phases']
+
+        with open(self.groundtruth, 'r') as f:
+            json_ann = json.load(f)['annotations']
+
+        image_to_gt = {ann['image_name'].split('/')[-2] + '/' + ann['image_name'].split('/')[-1]: ann['phases'] for ann in json_ann}
+
         for dataset, videos in dataset_metrics.items():
-            dataset_preds = [pred for pred, name in zip(preds, names) if any(video in name for video in videos)]
-            dataset_gts = [self.groundtruth[name] for name in names if any(video in name for video in videos)]
-            
+            dataset_preds = []
+            dataset_gts = []
+
+            # Filtrar las predicciones y las ground truths que corresponden a este dataset
+            for video in videos:
+                for img_name, gt in image_to_gt.items():
+                    # Asegurarnos de que el video está contenido en el nombre del archivo
+                    split_image = img_name.split('/')
+                    video_name = split_image[0]  # Nombre del video (e.g. 'video_15')
+                    video_name = 'video_' + video_name.split('_')[1].zfill(3)  # Formateamos el video con 3 dígitos
+                    img_name = video_name + '/' + split_image[1]  # Reconstituir el nombre de la imagen
+
+                    # Corregir la extensión en el dataset 'HeiChole' (cambiar .png a .jpg)
+                    if dataset == "HeiChole":
+                        img_name = img_name.replace(".png", ".jpg")
+
+                    # Compara solo el nombre del video en la imagen
+                    if video in img_name.split('/')[0]:  
+                        # Obtener la predicción (usamos la clase con la mayor puntuación)
+                        if img_name in names:
+                            img_idx = names.index(img_name)
+                            pred_dist = values_preds[img_idx]
+                            pred_class = np.argmax(pred_dist)  # Predicción como la clase con mayor score
+
+                            dataset_preds.append(pred_class)
+                            dataset_gts.append(gt)
+
             if not dataset_preds or not dataset_gts:
                 logging.warning(f"No predictions or ground truths for {dataset}. Skipping evaluation.")
                 continue
@@ -264,8 +294,8 @@ class SurgeryMeter(object):
             elif dataset == "Cholec80":
                 video_results = []
                 for video in videos:
-                    video_preds = [pred for pred, name in zip(preds, names) if video in name]
-                    video_gts = [self.groundtruth[name] for name in names if video in name]
+                    video_preds = [pred for pred, name in zip(dataset_preds, names) if video in name]
+                    video_gts = [gt for name, gt in zip(names, dataset_gts) if video in name]
                     if video_preds and video_gts:
                         video_results.append(self.calculate_metrics(video_preds, video_gts, ["accuracy", "precision", "recall"]))
                 metrics_mean = {metric: np.mean([res[metric] for res in video_results]) for metric in ["accuracy", "precision", "recall"]}
@@ -280,6 +310,8 @@ class SurgeryMeter(object):
             
             elif dataset == "M2CAI":
                 results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["precision", "recall", "jaccard"])
+
+            wandb.log({dataset: results[dataset]})
 
         return results
     
@@ -301,9 +333,9 @@ class SurgeryMeter(object):
 
         dataset_results = self.evaluation_per_dataset(self.all_preds, self.all_names)
 
-        for dataset, metrics in dataset_results.items():
-            if log:
-                logging.info(f"Metrics for {dataset}: {metrics}")
+        # for dataset, metrics in dataset_results.items():
+        #     if log:
+        #         logging.log_json_stats(f"Metrics for {dataset}: {metrics}")
         
         return self.full_map, np.mean([v[m] for v,m in zip(list(self.full_map.values()), self.metrics)]), out_name
                     
