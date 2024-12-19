@@ -125,3 +125,4 @@ class Led(SurgicalDataset):
             frame_identifier = complete_name
         
         return imgs, all_labels, extra_data, frame_identifier
+        #return imgs, all_labels, extra_data, frame_identifier, mask

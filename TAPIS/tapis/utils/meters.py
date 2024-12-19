@@ -274,7 +274,7 @@ class SurgeryMeter(object):
                         img_name = img_name.replace(".png", ".jpg")
 
                     # Compara solo el nombre del video en la imagen
-                    if video in img_name.split('/')[0]:  
+                    if video in img_name.split('/')[0]:  # 'video_15' in 'video_153'
                         # Obtener la predicción (usamos la clase con la mayor puntuación)
                         if img_name in names:
                             img_idx = names.index(img_name)
@@ -285,7 +285,7 @@ class SurgeryMeter(object):
                             dataset_gts.append(gt)
 
             if not dataset_preds or not dataset_gts:
-                logging.warning(f"No predictions or ground truths for {dataset}. Skipping evaluation.")
+                print(f"No predictions or ground truths for {dataset}. Skipping evaluation.")
                 continue
 
             if dataset == "AutoLaparo":
@@ -332,6 +332,7 @@ class SurgeryMeter(object):
             logging.log_json_stats(stats)
 
         dataset_results = self.evaluation_per_dataset(self.all_preds, self.all_names)
+        print(dataset_results)
 
         # for dataset, metrics in dataset_results.items():
         #     if log:

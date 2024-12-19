@@ -69,7 +69,7 @@ def train_epoch(
         type_dict.update(pres_type_dict)
         loss_weights += cfg.TASKS.PRESENCE_WEIGHTS
     
-    for cur_iter, (inputs, labels, data, image_names) in enumerate(train_loader):
+    for cur_iter, (inputs, labels, data, image_names) in enumerate(train_loader): # Mask en caso de ser necesario
 
         # Transfer the data to the current GPU device.
         if cfg.NUM_GPUS:

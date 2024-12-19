@@ -24,7 +24,8 @@ def detection_collate(batch):
     Returns:
         (tuple): collated detection data batch.
     """
-    images, all_labels, extra_data, image_names= zip(*batch)
+    
+    images, all_labels, extra_data, image_names= zip(*batch) #Agregar mask de ser necesario
     image_names = image_names if type(image_names[0])==str else torch.tensor(image_names)
 
     try:
@@ -64,7 +65,7 @@ def detection_collate(batch):
             
         collated_labels[key] = torch.tensor(data).float()
 
-    return images, collated_labels, collated_extra_data, image_names
+    return images, collated_labels, collated_extra_data, image_names #Retornar mask de ser necesario
 
 
 def construct_loader(cfg, split, is_precise_bn=False):
