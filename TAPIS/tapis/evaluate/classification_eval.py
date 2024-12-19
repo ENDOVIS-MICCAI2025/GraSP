@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import precision_recall_curve, average_precision_score, f1_score, precision_score, recall_score
 from tqdm import tqdm
+import wandb
 
 def eval_classification(task, coco_anns, preds, img_ann_dict, mask_path):
     
@@ -46,7 +47,6 @@ def eval_classification(task, coco_anns, preds, img_ann_dict, mask_path):
     return mAP, dict(zip(cat_names,list(ap.values())))
 
 def eval_precision(task, coco_anns, preds, img_ann_dict, mask_path):
-
     classes = coco_anns[f'{task}_categories']
     num_classes = len(classes)
 
@@ -54,28 +54,55 @@ def eval_precision(task, coco_anns, preds, img_ann_dict, mask_path):
     num_preds = np.zeros((len(coco_anns["annotations"])))
     num_probs = np.zeros((len(coco_anns["annotations"]), num_classes))
 
-
     evaluated_frames = []
     bar = tqdm(total=len(coco_anns["annotations"]))
     for idx, ann in enumerate(coco_anns["annotations"]):
         ann_class = int(ann[task])
+        name_image = ann["image_name"].split('/')
+        
+        # Corregir el nombre del video añadiendo ceros si tiene dos dígitos (video_15 -> video_015)
+        video_name = name_image[-2]
+        video_name = 'video_' + video_name.split('_')[1].zfill(3)  # Formateamos el video con 3 dígitos
+        
+        # El nombre de la imagen (video_X/imagen.jpg)
+        frame_intest = video_name + "/" + name_image[-1]
 
         num_labels[idx] = ann_class
 
-        if  ann["image_name"] in preds.keys():
-            these_probs = preds[ann["image_name"]]['{}_score_dist'.format(task)]
+        # Verificar si la predicción existe para la imagen
+        if frame_intest in preds.keys():
+            # Obtener las probabilidades de la predicción (ajustando si es necesario cambiar la extensión)
+            these_probs = preds[frame_intest]['{}_score_dist'.format(task)]
             if len(these_probs) == 0:
-                print("Prediction not found for image {}".format(ann["image_name"]))
+                print(f"Prediction not found for image {frame_intest}")
                 these_probs = np.zeros((1, num_classes))
             else:
                 evaluated_frames.append(idx)
+            
+            # Guardar las predicciones y las probabilidades
             num_preds[idx] = np.argmax(these_probs)
             num_probs[idx] = these_probs
         else:
-            print("Image {} not found in predictions lists".format(ann["image_name"]))
-            breakpoint()
-        bar.update(1)
+            # Si no se encuentra la imagen en las predicciones, cambiar la extensión .png a .jpg
+            if frame_intest.endswith('.png'):
+                frame_intest = frame_intest.replace('.png', '.jpg')
 
+            # Verificar si la imagen con la extensión corregida está en las predicciones
+            if frame_intest in preds.keys():
+                these_probs = preds[frame_intest]['{}_score_dist'.format(task)]
+                if len(these_probs) == 0:
+                    print(f"Prediction not found for image {frame_intest}")
+                    these_probs = np.zeros((1, num_classes))
+                else:
+                    evaluated_frames.append(idx)
+
+                num_preds[idx] = np.argmax(these_probs)
+                num_probs[idx] = these_probs
+            else:
+                print(f"Image {frame_intest} not found in predictions lists after extension change.")
+                breakpoint()
+
+        bar.update(1)
 
     f1 = f1_score(num_labels, num_preds, average='macro')
     
@@ -92,5 +119,7 @@ def eval_precision(task, coco_anns, preds, img_ann_dict, mask_path):
     cat_names = [f"{cat['name']}" for cat in classes]
     cat_names.append("mP")
     cat_names.append("mR")
+
+    wandb.log({"f1": f1, "mP": mprecision, "mR": mrecall})
     
     return f1, dict(zip(cat_names,list(msummary.values())))
