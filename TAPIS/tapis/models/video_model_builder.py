@@ -1014,7 +1014,7 @@ class MViTv2(nn.Module):
                     pass
             else:
                 extra_head = head_helper.TransformerBasicHead(
-                            self.embed_dim,
+                            embed_dim,
                             self.num_classes[idx],
                             dropout_rate=cfg.MODEL.DROPOUT_RATE,
                             act_func=self.act_fun[idx],
@@ -1162,6 +1162,6 @@ class MViTv2(nn.Module):
         # TAPIR head classification
         for task in self.tasks:
             extra_head = getattr(self, "extra_heads_{}".format(task))
-            out[task] = extra_head(x, features, boxes_mask, self.cls_embed_on)
+            out[task] = extra_head(x, features, boxes_mask)
                 
         return out
