@@ -28,7 +28,7 @@ import wandb
 logger = logging.get_logger(__name__)
 
 # Initialize wandb.
-wandb.init(project='Phases_Foundational', entity='endovis_bcv', name='Baseline_MViT')
+wandb.init(project='Phases_Foundational', entity='endovis_bcv', name='Baseline_MViT_v2_Padding')
 
 def train_epoch(
     train_loader,
@@ -89,6 +89,8 @@ def train_epoch(
             
             if cfg.NUM_GPUS>1:
                 image_names = image_names.cuda(non_blocking=True)
+                # mask = torch.stack(mask, dim=0)  # Stack along a new dimension to create shape (batch_size, 28)
+                # mask = mask.cuda(non_blocking=True)  # Move to GPU if necessary
                     
         # Update the learning rate.
         lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
@@ -104,6 +106,7 @@ def train_epoch(
             # Explicitly declare reduction to mean and compute the loss for each task.
             loss = []
             for task in loss_dict:
+                # preds[task] = preds[task] + mask
                 loss_fun = loss_dict[task]
                 target_type = type_dict[task]
                 loss.append(loss_fun(preds[task], labels[task].to(target_type)))
@@ -192,6 +195,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
             
             if cfg.NUM_GPUS>1:
                 image_names = image_names.cuda(non_blocking=True)
+                # mask = torch.stack(mask, dim=0)  # Stack along a new dimension to create shape (batch_size, 28)
+                # mask = mask.cuda(non_blocking=True)  # Move to GPU if necessary
                     
         val_meter.data_toc()
 
@@ -204,6 +209,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
         assert (not (cfg.REGIONS.ENABLE and cfg.FEATURES.ENABLE)) or len(rpn_ftrs)==len(image_names)==len(boxes), f'Inconsistent lenghts {len(rpn_ftrs)} & {len(image_names)} & {len(boxes)}'
 
         preds = model(inputs, rpn_ftrs, boxes_mask)
+        # preds['phases'] = preds['phases'] + mask
 
         if cfg.NUM_GPUS:
             preds = {task: preds[task].cpu() for task in complete_tasks}
@@ -239,6 +245,23 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
         for task in complete_tasks:
             if task not in region_tasks:
                 preds[task] = preds[task].tolist()
+
+        # Log predictions, labels, and images
+        for i, image_name in enumerate(image_names):
+            # Extract one image, predictions, and labels
+            img = inputs[0][i].cpu().numpy()  # Convert tensor to numpy
+            wandb_image = wandb.Image(img, caption=f"Image: {image_name}")
+
+            # Structure the log data
+            log_data = {
+                "epoch": cur_epoch,
+                "image": wandb_image,
+                "predictions": {task: preds[task][i] for task in preds},
+                "labels": {task: labels[task][i] for task in labels}
+            }
+
+            # Log to WandB
+            wandb.log(log_data)
         
         # Update and log stats.
         val_meter.update_stats(preds, image_names, ori_boxes)
