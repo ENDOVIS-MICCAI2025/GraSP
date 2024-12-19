@@ -9,6 +9,7 @@ import numpy as np
 from . import surgical_dataset_helper as data_helper
 from . import cv2_transform as cv2_transform
 from . import utils as utils
+import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,21 @@ class SurgicalDataset(torch.utils.data.Dataset):
         # breakpoint()
         boxes = [boxes.astype('float')]
 
+        max_height = max([img.shape[0] for img in imgs])
+        max_width = max([img.shape[1] for img in imgs])
+
+        # Apply padding only if the images have different sizes
+        # Apply padding only if the images have different shapes
+        if any(img.shape[0] != max_height or img.shape[1] != max_width for img in imgs):
+            imgs = [cv2.copyMakeBorder(
+                img,
+                0, max_height - img.shape[0], 0, max_width - img.shape[1],
+                borderType=cv2.BORDER_CONSTANT, value=(0, 0, 0)  # Padding negro
+            ) for img in imgs]
+
+            # Ensure boxes also fit the new image size
+            boxes = [cv2_transform.scale_boxes(self._crop_size, box, height, width) for box in boxes]
+
         # The image now is in HWC, BGR format.
         if self._split == "train" and not self.cfg.DATA.JUST_CENTER:  # "train"
             imgs, boxes = cv2_transform.random_short_side_scale_jitter_list(
@@ -155,6 +171,7 @@ class SurgicalDataset(torch.utils.data.Dataset):
                 imgs, boxes = cv2_transform.horizontal_flip_list(
                     0.5, imgs, order="HWC", boxes=boxes
                 )
+        
         elif self._split == "val" or self.cfg.DATA.JUST_CENTER:
             # Short side to test_scale. Non-local and STRG uses 256.
             imgs = [cv2_transform.scale(self._crop_size, img) for img in imgs]
