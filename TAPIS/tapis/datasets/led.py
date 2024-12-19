@@ -3,6 +3,8 @@
 
 import itertools
 import os
+import json
+import torch
 import logging
 import numpy as np
 
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @DATASET_REGISTRY.register()
-class Levis(SurgicalDataset):
+class Led(SurgicalDataset):
     """
     PSI-AVA dataloader.
     """
@@ -25,6 +27,7 @@ class Levis(SurgicalDataset):
         self.zero_fill = 5
         self.cfg = cfg
         self.heichole_videos = [f'video_{str(i).zfill(3)}' for i in range(102, 126)]
+        self.videos_json = json.load(open('/home/naparicioc/ENDOVIS/video2phases_dict.json'))
         super().__init__(cfg,split)
     
     def keyframe_mapping(self, video_idx, sec_idx, sec):
@@ -98,18 +101,22 @@ class Levis(SurgicalDataset):
         boxes = np.zeros((1, 4))
                 
         # Load images of current clip.
-        #breakpoint()
         image_paths = [self._image_paths[video_idx][frame] for frame in seq]
         imgs = utils.retry_load_images(
             image_paths, backend=self.cfg.ENDOVIS_DATASET.IMG_PROC_BACKEND
         )
-        
-        # Preprocess images and boxes
+
         imgs, boxes = self._images_and_boxes_preprocessing_cv2(
             imgs, boxes=boxes
         )
         
         imgs = utils.pack_pathway_output(self.cfg, imgs)
+
+        # # Create mask for the current frame (num_classes,)
+        # num_classes = 28  # Number of classes
+        # mask = torch.full((num_classes,), float('-inf'), dtype=torch.float32)  # Initialize with -inf
+        # valid_classes = self.videos_json.get(video_name, [])
+        # mask[valid_classes] = 0  # Set valid classes to 0 (no masking)
 
         if self.cfg.NUM_GPUS>1:
             video_num = int(video_name.replace('video_',''))
