@@ -24,10 +24,17 @@ def detection_collate(batch):
     Returns:
         (tuple): collated detection data batch.
     """
-    images, all_labels, extra_data, image_names = zip(*batch)
+    images, all_labels, extra_data, image_names= zip(*batch)
     image_names = image_names if type(image_names[0])==str else torch.tensor(image_names)
 
-    images = default_collate(images)
+    try:
+        images = default_collate(images)
+    except:
+        print('Length of images:', len(images))
+        for i in range(len(images)):
+            print('Image shape:', images[i].shape)
+            print('Type:', type(images[i]))
+        print(image_names)
 
     collated_extra_data = {}
     for key in extra_data[0]:
@@ -89,6 +96,7 @@ def construct_loader(cfg, split, is_precise_bn=False):
     # Construct the dataset
     dataset = build_dataset(dataset_name, cfg, split)
     # TODO: Index for debugging
+    # dataset[0]
 
     if isinstance(dataset, torch.utils.data.IterableDataset):
         loader = torch.utils.data.DataLoader(
