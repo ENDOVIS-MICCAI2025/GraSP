@@ -9,9 +9,10 @@ import torch.nn as nn
 from .common import DropPath, Mlp
 
 
-def attention_pool(tensor, pool, thw_shape, has_cls_embed=True, norm=None):
+def attention_pool(tensor, pool, thw_shape, has_cls_embed=True, has_text_embed=False, norm=None):
     if pool is None:
         return tensor, thw_shape
+
     tensor_dim = tensor.ndim
     if tensor_dim == 4:
         pass
@@ -20,8 +21,15 @@ def attention_pool(tensor, pool, thw_shape, has_cls_embed=True, norm=None):
     else:
         raise NotImplementedError(f"Unsupported input dimension {tensor.shape}")
 
-    if has_cls_embed:
+    # Separar cls_token, text_embedding y tokens principales del tensor
+    if has_cls_embed and has_text_embed:
+        cls_tok, text_tok, tensor = tensor[:, :, :1, :], tensor[:, :, 1:2, :], tensor[:, :, 2:, :]
+    elif has_cls_embed:
         cls_tok, tensor = tensor[:, :, :1, :], tensor[:, :, 1:, :]
+    elif has_text_embed:
+        text_tok, tensor = tensor[:, :, :1, :], tensor[:, :, 1:, :]
+    else:
+        cls_tok, text_tok = None, None
 
     B, N, L, C = tensor.shape
     T, H, W = thw_shape
@@ -29,20 +37,32 @@ def attention_pool(tensor, pool, thw_shape, has_cls_embed=True, norm=None):
         tensor.reshape(B * N, T, H, W, C).permute(0, 4, 1, 2, 3).contiguous()
     )
 
+    # Aplicar pooling
     tensor = pool(tensor)
 
+    # Actualizar thw_shape y reorganizar el tensor
     thw_shape = [tensor.shape[2], tensor.shape[3], tensor.shape[4]]
     L_pooled = tensor.shape[2] * tensor.shape[3] * tensor.shape[4]
     tensor = tensor.reshape(B, N, C, L_pooled).transpose(2, 3)
-    if has_cls_embed:
+
+    # Reinsertar cls_token y text_embedding después del pooling
+    if has_cls_embed and has_text_embed:
+        tensor = torch.cat((cls_tok, text_tok, tensor), dim=2)
+    elif has_cls_embed:
         tensor = torch.cat((cls_tok, tensor), dim=2)
+    elif has_text_embed:
+        tensor = torch.cat((text_tok, tensor), dim=2)
+
+    # Aplicar normalización si corresponde
     if norm is not None:
         tensor = norm(tensor)
-    # Assert tensor_dim in [3, 4]
+
+    # Restaurar la dimensión original si el tensor original tenía 3 dimensiones
     if tensor_dim == 4:
         pass
-    else:  #  tensor_dim == 3:
+    else:  # tensor_dim == 3
         tensor = tensor.squeeze(1)
+
     return tensor, thw_shape
 
 

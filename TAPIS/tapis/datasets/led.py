@@ -3,6 +3,7 @@
 
 import itertools
 import os
+import clip
 import json
 import torch
 import logging
@@ -28,11 +29,42 @@ class Led(SurgicalDataset):
         self.cfg = cfg
         self.heichole_videos = [f'video_{str(i).zfill(3)}' for i in range(102, 126)]
         self.videos_json = json.load(open('/home/naparicioc/ENDOVIS/video2phases_dict.json'))
+        self.videos_surgery = video_surgery_mapping = {
+                                range(1, 22): "hysterectomy surgery",
+                                range(22, 126): "cholecystectomy surgery",
+                                range(126, 156): "colorectal surgery",
+                                range(156, 197): "cholecystectomy surgery",
+                            }
+        
+        self.surgery_embeddings = self.load_embeddings("/home/naparicioc/ENDOVIS/CLIP/surgery_embeddings.json")
+        self.phases_embeddings = self.load_embeddings("/home/naparicioc/ENDOVIS/CLIP/phases_embeddings.json")
         super().__init__(cfg,split)
+
+    @staticmethod
+    def load_embeddings(file_path):
+        """
+        Load embeddings from a JSON file.
+
+        Args:
+            file_path (str): Path to the JSON file.
+
+        Returns:
+            dict: A dictionary mapping surgery types to PyTorch tensors.
+        """
+        with open(file_path, "r") as f:
+            embeddings = json.load(f)
+        return {k: torch.tensor(v) for k, v in embeddings.items()}
     
     def keyframe_mapping(self, video_idx, sec_idx, sec):
         #breakpoint()
-        return sec_idx 
+        return sec_idx
+    
+    def get_surgery_type(self, video_name):
+        video_id = int(video_name.replace('video_', ''))
+        for video_range, surgery_type in self.videos_surgery.items():
+            if video_id in video_range:
+                return surgery_type
+        return "Unknown surgery type"
         
     def __getitem__(self, idx):
         """
@@ -112,11 +144,18 @@ class Led(SurgicalDataset):
         
         imgs = utils.pack_pathway_output(self.cfg, imgs)
 
-        # # Create mask for the current frame (num_classes,)
-        # num_classes = 28  # Number of classes
-        # mask = torch.full((num_classes,), float('-inf'), dtype=torch.float32)  # Initialize with -inf
-        # valid_classes = self.videos_json.get(video_name, [])
-        # mask[valid_classes] = 0  # Set valid classes to 0 (no masking)
+        # Create mask for the current frame (num_classes,)
+        num_classes = 28  # Number of classes
+        mask = torch.full((num_classes,), float('-inf'), dtype=torch.float32)  # Initialize with -inf
+        valid_classes = self.videos_json.get(video_name, [])
+        mask[valid_classes] = 0  # Set valid classes to 0 (no masking)
+
+        # Create prompt for the current frame using surgery embeddings (3 types)
+        surgery_type = self.get_surgery_type(video_name)
+        text_embedding = self.surgery_embeddings[surgery_type]
+
+        # Create prompt for the current frame using phases embeddings (28 phases)
+        # text_embedding = self.phases_embeddings[video_name] 
 
         if self.cfg.NUM_GPUS>1:
             video_num = int(video_name.replace('video_',''))
@@ -124,5 +163,4 @@ class Led(SurgicalDataset):
         else:
             frame_identifier = complete_name
         
-        return imgs, all_labels, extra_data, frame_identifier
-        #return imgs, all_labels, extra_data, frame_identifier, mask
+        return imgs, all_labels, extra_data, frame_identifier, mask, text_embedding

@@ -276,6 +276,8 @@ class TransformerBasicHead(nn.Module):
         if dropout_rate > 0.0:
             self.dropout = nn.Dropout(dropout_rate)
         self.class_projection = nn.Linear(dim_in, num_classes, bias=True)
+        # self.concat_projection = nn.Linear(1280, num_classes, bias=True)
+        self.text_projection = nn.Linear(512, 768, bias=True)
         self.cls_embed = cls_embed
         self.recognition = recognition
         self.act_func = act_func
@@ -291,20 +293,31 @@ class TransformerBasicHead(nn.Module):
                 "function.".format(act_func)
             )
 
-    def forward(self, x, features=None, boxes_mask=None):
+    def forward(self, x, features=None, boxes_mask=None, mask=None, text_embeddings=None):
         if self.cls_embed and not self.recognition:
             x = x[:, 0]
         elif self.cls_embed:
-            x = x[:,1:].mean(1)
+            x = x[:, 1:].mean(1)
         else:
             x = x.mean(1)
 
         if hasattr(self, "dropout"):
             x = self.dropout(x)
+        
+        # If text_embeddings are provided, process and sum them with x
+        if text_embeddings is not None:
+            # Ensure text_embeddings are projected to the same dimension as x
+            # x = torch.cat([x, text_embeddings], dim=1)  # Concatenate along feature dimension
+            text_emb_projected = self.text_projection(text_embeddings)
+            x = x + text_emb_projected  # Element-wise sum
+
+        # Perform the final projection and activation
         x = self.class_projection(x)
+        # x = self.concat_projection(x)
 
         if self.act_func == "sigmoid" or not self.training:
             x = self.act(x)
+        
         return x
 
 

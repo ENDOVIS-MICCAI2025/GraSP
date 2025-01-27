@@ -28,8 +28,8 @@ IDENT_FUNCT_DICT = {'psi_ava': lambda x,y: 'CASE{:03d}/{:05d}.jpg'.format(x,y),
                     'grasp': lambda x,y: 'CASE{:03d}/{:09d}.jpg'.format(x,y),
                     'endovis_2018': lambda x,y: 'seq_{}_frame{:03d}.jpg'.format(x,y),
                     'endovis_2017': lambda x,y: 'seq{}_frame{:03d}.jpg'.format(x,y),
-                    'levis': lambda x,y: 'video_{:03d}/{:05d}.jpg'.format(x,y),
-                    'levis_png': lambda x,y: 'video_{:03d}/{:05d}.png'.format(x,y)}
+                    'led': lambda x,y: 'video_{:03d}/{:05d}.jpg'.format(x,y),
+                    'led_png': lambda x,y: 'video_{:03d}/{:05d}.png'.format(x,y)}
 
 heichole_videos = [f'video_{str(i).zfill(3)}' for i in range(102, 126)]
 
@@ -312,6 +312,8 @@ class SurgeryMeter(object):
                 results[dataset] = self.calculate_metrics(dataset_preds, dataset_gts, ["precision", "recall", "jaccard"])
 
             wandb.log({dataset: results[dataset]})
+
+            print(f"Dataset: {dataset}, Preds: {len(dataset_preds)}, GTs: {len(dataset_gts)}")
 
         return results
     

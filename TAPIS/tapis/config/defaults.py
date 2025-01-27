@@ -864,9 +864,23 @@ _C.FEATURES.TRAIN_FEATURES_PATH = ''
 # Path to .pth file with the detected validation boxes features
 _C.FEATURES.TEST_FEATURES_PATH = ''
 
+# ---------------------------------------------------------------------------- #
+# TEXT AND MASK IN LED
+# ---------------------------------------------------------------------------- #
+_C.LED = CfgNode()
+
+# When true, the model masks the logits of the phases that not correspond to the frame.
+_C.LED.MASKS = False
+
+# When true, the model uses text embeddings from the text encoder of CLIP.
+_C.LED.TEXT = False
+
+# When true, the model uses text embeddings in the patch embeding and class token sequence (before passing throug MViT).
+# If false, the text embedding will be added to the frame embeddings in the classification head
+_C.LED.TEXT_SEQUENCE = False
+
 # Add custom config with default values.
 custom_config.add_custom_config(_C)
-
 
 def assert_and_infer_cfg(cfg):
     # BN assertions.

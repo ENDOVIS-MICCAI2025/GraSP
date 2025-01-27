@@ -9,6 +9,7 @@ import shutil
 import os
 import pprint
 import torch
+import clip
 
 import tapis.models.losses as losses
 import tapis.models.optimizer as optim
@@ -28,7 +29,7 @@ import wandb
 logger = logging.get_logger(__name__)
 
 # Initialize wandb.
-wandb.init(project='Phases_Foundational', entity='endovis_bcv', name='Baseline_MViT_v2_Padding')
+wandb.init(project='Phases_Foundational', entity='endovis_bcv', name='TEST_NOLOGITS_Baseline_MViT_v1_Phases_Sequence')
 
 def train_epoch(
     train_loader,
@@ -69,11 +70,28 @@ def train_epoch(
         type_dict.update(pres_type_dict)
         loss_weights += cfg.TASKS.PRESENCE_WEIGHTS
     
-    for cur_iter, (inputs, labels, data, image_names) in enumerate(train_loader): # Mask en caso de ser necesario
+    for cur_iter, (inputs, labels, data, image_names, mask, text_embeddings) in enumerate(train_loader): # Mask en caso de ser necesario
 
         # Transfer the data to the current GPU device.
         if cfg.NUM_GPUS:
             inputs[0] = inputs[0].cuda(non_blocking=True)
+
+            if cfg.LED.MASKS:
+                print("Using masks")
+                mask = torch.stack(mask, dim=0)  # Stack along a new dimension to create shape (batch_size, 28)
+                mask = mask.cuda(non_blocking=True)  # Move to GPU if necessary
+            
+            else:
+                mask = None
+
+            if cfg.LED.TEXT:
+                print("Using text embeddings")
+                text_embeddings = torch.stack(text_embeddings, dim=0)
+                text_embeddings = text_embeddings.cuda(non_blocking=True)
+
+            else:
+                text_embeddings = None
+
             if cfg.MODEL.PRECISION == 64:
                 inputs[0] = inputs[0].double()
 
@@ -89,9 +107,7 @@ def train_epoch(
             
             if cfg.NUM_GPUS>1:
                 image_names = image_names.cuda(non_blocking=True)
-                # mask = torch.stack(mask, dim=0)  # Stack along a new dimension to create shape (batch_size, 28)
-                # mask = mask.cuda(non_blocking=True)  # Move to GPU if necessary
-                    
+
         # Update the learning rate.
         lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
         optim.set_lr(optimizer, lr)
@@ -101,12 +117,13 @@ def train_epoch(
         with torch.cuda.amp.autocast(enabled=cfg.TRAIN.MIXED_PRECISION):
             rpn_ftrs = data["rpn_features"] if cfg.FEATURES.ENABLE else None
             boxes_mask = data["boxes_mask"] if cfg.REGIONS.ENABLE else None
-            preds = model(inputs, rpn_ftrs, boxes_mask)
+            preds = model(inputs, rpn_ftrs, boxes_mask, mask, text_embeddings)
 
             # Explicitly declare reduction to mean and compute the loss for each task.
             loss = []
             for task in loss_dict:
-                # preds[task] = preds[task] + mask
+                if cfg.LED.MASKS:
+                    preds[task] = preds[task] + mask
                 loss_fun = loss_dict[task]
                 target_type = type_dict[task]
                 loss.append(loss_fun(preds[task], labels[task].to(target_type)))
@@ -177,9 +194,26 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
             pres_tasks = [f'{task}_presence' for task in cfg.TASKS.PRESENCE_TASKS]
             complete_tasks += pres_tasks
 
-    for cur_iter, (inputs, labels, data, image_names) in enumerate(val_loader):
+    for cur_iter, (inputs, labels, data, image_names, mask, text_embeddings) in enumerate(val_loader):
         if cfg.NUM_GPUS:
             inputs[0] = inputs[0].cuda(non_blocking=True)
+
+            if cfg.LED.MASKS:
+                print("Using masks")
+                mask = torch.stack(mask, dim=0)
+                mask = mask.cuda(non_blocking=True)
+
+            else:
+                mask = None
+
+            if cfg.LED.TEXT:
+                print("Using text embeddings")
+                text_embeddings = torch.stack(text_embeddings, dim=0)
+                text_embeddings = text_embeddings.cuda(non_blocking=True)
+
+            else:
+                text_embeddings = None
+
             if cfg.MODEL.PRECISION == 64:
                 inputs[0] = inputs[0].double()
 
@@ -195,8 +229,6 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
             
             if cfg.NUM_GPUS>1:
                 image_names = image_names.cuda(non_blocking=True)
-                # mask = torch.stack(mask, dim=0)  # Stack along a new dimension to create shape (batch_size, 28)
-                # mask = mask.cuda(non_blocking=True)  # Move to GPU if necessary
                     
         val_meter.data_toc()
 
@@ -208,8 +240,10 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
 
         assert (not (cfg.REGIONS.ENABLE and cfg.FEATURES.ENABLE)) or len(rpn_ftrs)==len(image_names)==len(boxes), f'Inconsistent lenghts {len(rpn_ftrs)} & {len(image_names)} & {len(boxes)}'
 
-        preds = model(inputs, rpn_ftrs, boxes_mask)
-        # preds['phases'] = preds['phases'] + mask
+        preds = model(inputs, rpn_ftrs, boxes_mask, mask, text_embeddings)
+        
+        if cfg.LED.MASKS:
+            preds['phases'] = preds['phases'] + mask
 
         if cfg.NUM_GPUS:
             preds = {task: preds[task].cpu() for task in complete_tasks}
@@ -245,23 +279,6 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg):
         for task in complete_tasks:
             if task not in region_tasks:
                 preds[task] = preds[task].tolist()
-
-        # Log predictions, labels, and images
-        for i, image_name in enumerate(image_names):
-            # Extract one image, predictions, and labels
-            img = inputs[0][i].cpu().numpy()  # Convert tensor to numpy
-            wandb_image = wandb.Image(img, caption=f"Image: {image_name}")
-
-            # Structure the log data
-            log_data = {
-                "epoch": cur_epoch,
-                "image": wandb_image,
-                "predictions": {task: preds[task][i] for task in preds},
-                "labels": {task: labels[task][i] for task in labels}
-            }
-
-            # Log to WandB
-            wandb.log(log_data)
         
         # Update and log stats.
         val_meter.update_stats(preds, image_names, ori_boxes)

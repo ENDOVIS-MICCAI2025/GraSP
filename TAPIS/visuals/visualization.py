@@ -165,10 +165,10 @@ def main():
         "#15ae88", "#1d5562", "#24728c", "#0c6092"
         ]
 
-    ann = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/data/Levis/annotations/test.json"
-    preds_mvitv1 = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Levis/PHASES/ALL_TAPIS_Padding/best_predictions/best_all_13_preds_phases.json"
-    preds_mvitv2 = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Levis/PHASES/ALL_TAPIS_v2_Padding/best_predictions/best_13_preds_phases.json"
-    preds_logits = '/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Levis/PHASES/ALL_TAPIS_v2_Padding_Logits/best_predictions/best_all_9_preds_phases.json'
+    ann = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/data/Led/annotations/test.json"
+    preds_mvitv1 = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Led/PHASES/ALL_TAPIS_v1_Padding/best_predictions/best_all_13_preds_phases.json"
+    preds_mvitv2 = "/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Led/PHASES/ALL_TAPIS_v2B_Padding/best_predictions/best_13_preds_phases.json"
+    preds_logits = '/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Led/PHASES/ALL_TAPIS_v1_Padding_Logits/best_predictions/best_all_9_preds_phases.json'
 
     ann_dict = load_json_file(ann)['annotations']
     preds_mvitv1_dict = load_json_file(preds_mvitv1)

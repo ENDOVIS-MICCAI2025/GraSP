@@ -481,6 +481,10 @@ class MViT(nn.Module):
             self._frame_tasks = {task for task in cfg.TASKS.TASKS if task not in cfg.ENDOVIS_DATASET.REGION_TASKS}
             if cfg.TASKS.PRESENCE_RECOGNITION:
                 self.recog_tasks = set(cfg.TASKS.PRESENCE_TASKS)
+
+        # TODO: Added for text embeddings in the sequence
+        if self.cfg.LED.TEXT_SEQUENCE:
+            self.text_layer = nn.Linear(512, 96, bias=True)
             
         # Prepare output.
         embed_dim = cfg.MVIT.EMBED_DIM
@@ -525,6 +529,9 @@ class MViT(nn.Module):
         if self.cls_embed_on:
             self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
             pos_embed_dim = num_patches + 1
+
+            if self.cfg.LED.TEXT_SEQUENCE:
+                pos_embed_dim += 1
         else:
             pos_embed_dim = num_patches
 
@@ -541,6 +548,12 @@ class MViT(nn.Module):
                 self.pos_embed_class = nn.Parameter(
                     torch.zeros(1, 1, embed_dim)
                 )
+
+            if cfg.LED.TEXT_SEQUENCE:
+                self.pos_embed_text = nn.Parameter(
+                    torch.zeros(1, 1, embed_dim)
+                )
+
         else:
             self.pos_embed = nn.Parameter(
                 torch.zeros(1, pos_embed_dim, embed_dim)
@@ -678,6 +691,8 @@ class MViT(nn.Module):
             trunc_normal_(self.pos_embed_temporal, std=0.02)
             if self.cls_embed_on:
                 trunc_normal_(self.pos_embed_class, std=0.02)
+            if self.cfg.LED.TEXT_SEQUENCE:
+                trunc_normal_(self.pos_embed_text, std=0.02)
         else:
             trunc_normal_(self.pos_embed, std=0.02)
         if self.cls_embed_on:
@@ -718,8 +733,7 @@ class MViT(nn.Module):
         else:
             return {}
 
-    def forward(self, x, features=None, boxes_mask=None):
-        # breakpoint()
+    def forward(self, x, features=None, boxes_mask=None, mask=None, text_embeddings=None):
         out = {}
         x = x[0]
         x = self.patch_embed(x)
@@ -728,6 +742,11 @@ class MViT(nn.Module):
         H = self.cfg.DATA.TRAIN_CROP_SIZE // self.patch_stride[1]
         W = self.cfg.DATA.TRAIN_CROP_SIZE // self.patch_stride[2]
         B, N, C = x.shape
+
+        if self.cfg.LED.TEXT_SEQUENCE and text_embeddings is not None:
+            text_embeddings = self.text_layer(text_embeddings)
+            text_embeddings = text_embeddings.unsqueeze(1)
+            x = torch.cat([text_embeddings, x], dim=1)
 
         if self.cls_embed_on:
             cls_tokens = self.cls_token.expand(
@@ -744,7 +763,11 @@ class MViT(nn.Module):
                 dim=1,
             )
             if self.cls_embed_on:
-                pos_embed = torch.cat([self.pos_embed_class, pos_embed], 1)
+                if self.cfg.LED.TEXT_SEQUENCE and text_embeddings is not None:
+                    pos_embed = torch.cat([self.pos_embed_class, self.pos_embed_text, pos_embed], 1)
+                else:
+                    pos_embed = torch.cat([self.pos_embed_class, pos_embed], 1)
+                
             x = x + pos_embed
         else:
             x = x + self.pos_embed
@@ -764,7 +787,7 @@ class MViT(nn.Module):
         # TAPIR head classification
         for task in self.tasks:
             extra_head = getattr(self, "extra_heads_{}".format(task))
-            out[task] = extra_head(x, features, boxes_mask)
+            out[task] = extra_head(x, features, boxes_mask, mask, text_embeddings)
 
             if self.recogn and task in self.recog_tasks:
                 out[f'{task}_presence'] = getattr(self, "extra_heads_{}_presence".format(task))(x, features, boxes_mask)

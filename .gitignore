@@ -3,5 +3,6 @@ TAPIS/data/GraSP
 TAPIS/region_proposals/output
 TAPIS/wandb
 TAPIS/data/Levis
+TAPIS/data/Led
 TAPIS/visuals/*
 */__pycache__

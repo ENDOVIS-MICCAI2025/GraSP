@@ -9,14 +9,14 @@ ONLINE=True
 
 #-------------------------
 DATASET="Led"
-EXPERIMENT_NAME=$EXP_PREFIX"_"$ARCH"_v1_Phases_Sequence"
+EXPERIMENT_NAME="TEST_NOLOGITS_"$EXP_PREFIX"_"$ARCH"_v1_Phases_Sequence"
 CONFIG_PATH="configs/"$DATASET"/"$ARCH"_"$TASK".yaml"
 FRAME_DIR="./data/"$DATASET"/frames" # Take the videos to this?
 OUTPUT_DIR="outputs/"$DATASET"/"$TASK"/"$EXPERIMENT_NAME
 FRAME_LIST="./data/"$DATASET"/frame_lists"
 ANNOT_DIR="./data/"$DATASET"/annotations/"
 COCO_ANN_PATH="./data/"$DATASET"/annotations/test.json"
-CHECKPOINT="/home/naparicioc/K400_MVIT_B_16x4_CONV.pyth"
+CHECKPOINT="/home/naparicioc/ENDOVIS/GraSP/TAPIS/outputs/Led/PHASES/ALL_TAPIS_v1_Padding/checkpoint_best_phases.pyth"
 
 TYPE="pytorch"
 #-------------------------
@@ -26,14 +26,14 @@ export PYTHONPATH=/home/nayobi/Endovis/GraSP/TAPIS/tapis:$PYTHONPATH
 
 mkdir -p $OUTPUT_DIR
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -B tools/run_net.py \
+CUDA_VISIBLE_DEVICES=1,2,3 python -B tools/run_net.py \
 --cfg $CONFIG_PATH \
-NUM_GPUS 4 \
+NUM_GPUS 3 \
 TRAIN.CHECKPOINT_FILE_PATH $CHECKPOINT \
 TRAIN.CHECKPOINT_EPOCH_RESET True \
 TRAIN.CHECKPOINT_TYPE $TYPE \
-TEST.ENABLE False \
-TRAIN.ENABLE True \
+TEST.ENABLE True \
+TRAIN.ENABLE False \
 ENDOVIS_DATASET.FRAME_DIR $FRAME_DIR \
 ENDOVIS_DATASET.FRAME_LIST_DIR $FRAME_LIST \
 ENDOVIS_DATASET.TRAIN_LISTS $TRAIN_FOLD".csv" \
@@ -50,4 +50,5 @@ TEST.DATASET $DATASET \
 TEST.BATCH_SIZE 180 \
 DATA.SAMPLING_RATE $SAMPLING_RATE \
 DATA.ONLINE $ONLINE \
-OUTPUT_DIR $OUTPUT_DIR 
+OUTPUT_DIR $OUTPUT_DIR \
+LED.MASKS True
